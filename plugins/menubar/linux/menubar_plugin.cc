@@ -16,6 +16,7 @@
 
 #include <flutter_linux/flutter_linux.h>
 #include <gtk/gtk.h>
+#include <string.h>
 
 // See menu_channel.dart for documentation.
 const char kChannelName[] = "flutter/menubar";
@@ -26,9 +27,17 @@ const char kMenuSetMethod[] = "Menubar.SetMenu";
 const char kMenuItemSelectedCallbackMethod[] = "Menubar.SelectedCallback";
 const char kIdKey[] = "id";
 const char kLabelKey[] = "label";
+const char kShortcutKeyEquivalent[] = "keyEquivalent";
+const char kShortcutSpecialKey[] = "specialKey";
+const char kShortcutKeyModifiers[] = "keyModifiers";
 const char kEnabledKey[] = "enabled";
 const char kChildrenKey[] = "children";
 const char kIsDividerKey[] = "isDivider";
+
+const int kFlutterShortcutModifierMeta = 1 << 0;
+const int kFlutterShortcutModifierShift = 1 << 1;
+const int kFlutterShortcutModifierAlt = 1 << 2;
+const int kFlutterShortcutModifierControl = 1 << 3;
 
 struct _FlMenubarPlugin {
   GObject parent_instance;
@@ -46,6 +55,23 @@ struct _FlMenubarPlugin {
 };
 
 G_DEFINE_TYPE(FlMenubarPlugin, fl_menubar_plugin, g_object_get_type())
+
+static void append_special_key(char accelerator[], int specialKey) {
+  if (specialKey >= 1 && specialKey <= 12) {
+    sprintf(accelerator, "%sF%d", accelerator, specialKey);
+  } else if (specialKey == 13) {
+    strcat(accelerator, "BackSpace");
+  } else if (specialKey == 14) {
+    strcat(accelerator, "Delete");
+  }
+}
+
+static void append_modifiers(char accelerator[], int modifiers) {
+  if (modifiers & kFlutterShortcutModifierMeta) strcat(accelerator, "<META>");
+  if (modifiers & kFlutterShortcutModifierShift) strcat(accelerator, "<SHIFT>");
+  if (modifiers & kFlutterShortcutModifierAlt) strcat(accelerator, "<ALT>");
+  if (modifiers & kFlutterShortcutModifierControl) strcat(accelerator, "<CTRL>");
+}
 
 static GMenu* value_to_menu(FlMenubarPlugin* self, FlValue* value,
                             GError** error);
@@ -84,6 +110,34 @@ static GMenuItem* value_to_menu_item(FlMenubarPlugin* self, FlValue* value,
   if (label_value != nullptr &&
       fl_value_get_type(label_value) == FL_VALUE_TYPE_STRING)
     g_menu_item_set_label(item, fl_value_get_string(label_value));
+
+  FlValue* key_equivalent_value = fl_value_lookup_string(
+      value, kShortcutKeyEquivalent);
+  FlValue* special_key_value = fl_value_lookup_string(
+      value, kShortcutSpecialKey);
+  FlValue* key_equivalent_modifier_mask = fl_value_lookup_string(
+      value, kShortcutKeyModifiers);
+
+  gchar accelerator[34] = "";
+
+  if (key_equivalent_modifier_mask != nullptr &&
+      fl_value_get_type(key_equivalent_modifier_mask) == FL_VALUE_TYPE_INT) {
+    const int key_equivalent_modifier = fl_value_get_int(key_equivalent_modifier_mask);
+    append_modifiers(accelerator, key_equivalent_modifier);
+  }
+
+  if (key_equivalent_value != nullptr &&
+      fl_value_get_type(key_equivalent_value) == FL_VALUE_TYPE_STRING) {
+    const gchar* key_equivalent = fl_value_get_string(key_equivalent_value);
+    strcat(accelerator, key_equivalent);
+  } else if (special_key_value != nullptr &&
+      fl_value_get_type(special_key_value) == FL_VALUE_TYPE_INT) {
+    const int special_key = fl_value_get_int(special_key_value);
+    append_special_key(accelerator, special_key);
+  }
+
+  if (accelerator[0] != '\0')
+    g_menu_item_set_attribute(item, "accel", "s", accelerator);
 
   FlValue* children = fl_value_lookup_string(value, kChildrenKey);
   if (children != nullptr) {
