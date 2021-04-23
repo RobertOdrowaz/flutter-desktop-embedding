@@ -20,6 +20,9 @@ const char kMenuSetMethod[] = "Menubar.SetMenu";
 const char kMenuItemSelectedCallbackMethod[] = "Menubar.SelectedCallback";
 const char kIdKey[] = "id";
 const char kLabelKey[] = "label";
+const char kShortcutKeyEquivalent[] = "keyEquivalent";
+const char kShortcutSpecialKey[] = "specialKey";
+const char kShortcutKeyModifiers[] = "keyModifiers";
 const char kEnabledKey[] = "enabled";
 const char kChildrenKey[] = "children";
 const char kIsDividerKey[] = "isDivider";
@@ -27,8 +30,41 @@ const char kIsDividerKey[] = "isDivider";
 const char kBadArgumentsError[] = "Bad Arguments";
 const char kMenuConstructionError[] = "Menu Construction Error";
 
+const int kFlutterShortcutModifierMeta = 1 << 0;
+const int kFlutterShortcutModifierShift = 1 << 1;
+const int kFlutterShortcutModifierAlt = 1 << 2;
+const int kFlutterShortcutModifierControl = 1 << 3;
+
 // Starting point for the generated menu IDs.
 const unsigned int kFirstMenuId = 1000;
+
+const std::string GetSpecialKeyString(const int specialKey) {
+  if (specialKey >= 1 && specialKey <= 12) {
+    return "+F" + std::to_string(specialKey);
+  } else if (specialKey == 13) {
+    return "+Backspace";
+  } else if (specialKey == 14) {
+    return "+Delete";
+  } else {
+    return "";
+  }
+}
+
+const std::string GetModifiersString(const int modifiers) {
+  std::string modifiersString = "";
+
+  if (modifiers & kFlutterShortcutModifierControl) modifiersString += "+Ctrl";
+  if (modifiers & kFlutterShortcutModifierShift) modifiersString += "+Shift";
+  if (modifiers & kFlutterShortcutModifierAlt) modifiersString += "+Alt";
+  if (modifiers & kFlutterShortcutModifierMeta) modifiersString += "+Win";
+
+  return modifiersString;
+}
+
+const std::string GetKeyEquivalentString(const std::string keyEquivalent) {
+  return '+' + (static_cast<char>(std::toupper(keyEquivalent[0]))
+      + keyEquivalent.substr(1));
+}
 
 // Looks for |key| in |map|, returning the associated value if it is present, or
 // a nullptr if not.
@@ -164,7 +200,30 @@ std::optional<EncodableValue> MenubarPlugin::AddMenuItem(
   } else {
     const auto *label =
         std::get_if<std::string>(ValueOrNull(representation, kLabelKey));
-    std::wstring wide_label(label ? Utf16FromUtf8(*label) : L"");
+
+    const auto *keyEquivalent = std::get_if<std::string>(ValueOrNull(
+        representation, kShortcutKeyEquivalent));
+    const auto *specialKey = std::get_if<int>(ValueOrNull(
+        representation, kShortcutSpecialKey));
+    const auto *specialKeyModifiers = std::get_if<int>(ValueOrNull(
+        representation, kShortcutKeyModifiers));
+
+    std::string accelerator = "";
+
+    if (specialKeyModifiers) {
+      accelerator += GetModifiersString(*specialKeyModifiers);
+    }
+    if (specialKey) {
+      accelerator += GetSpecialKeyString(*specialKey);
+    }
+    if (keyEquivalent) {
+      accelerator += GetKeyEquivalentString(*keyEquivalent);
+    }
+
+    std::string labelString =
+        accelerator.length() > 0 ? *label + '\t' + accelerator.substr(1) : *label;
+
+    std::wstring wide_label(label ? Utf16FromUtf8(labelString) : L"");
     UINT flags = MF_STRING;
 
     const auto *enabled =
